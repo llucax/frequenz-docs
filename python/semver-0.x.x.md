@@ -16,6 +16,11 @@ development fast, and yet make the life of users of those libraries easier,
 without ending in [dependency
 hell](https://en.wikipedia.org/wiki/Dependency_hell).
 
+This document covers *when* symbols may be deprecated and removed in 0.x.x
+projects. How to actually mark a symbol as deprecated is covered in
+[Deprecations](deprecations.md), which applies to every project, including
+those past 1.0.0.
+
 In this document we use the words like MUST, MAY, etc. with the meaning defined
 by [RFC2119](https://datatracker.ietf.org/doc/html/rfc2119).
 
@@ -103,7 +108,8 @@ When tightening a validation rule or invariant on existing code:
 #### Deprecating a single member or attribute
 
 When deprecating individual parts of an existing structure rather than an
-entire type or function:
+entire type or function (see [Deprecations](deprecations.md) for how to mark
+each of these):
 
 * **Methods and properties:** Mark them as `@deprecated`.
 * **Enum members:** Use `frequenz.core.enum.Enum` to mark members as deprecated.
