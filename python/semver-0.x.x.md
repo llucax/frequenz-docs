@@ -112,7 +112,8 @@ entire type or function (see [Deprecations](deprecations.md) for how to mark
 each of these):
 
 * **Methods and properties:** Mark them as `@deprecated`.
-* **Enum members:** Use `frequenz.core.enum.Enum` to mark members as deprecated.
+* **Enum members:** Use `frequenz.core.enum.Enum` to mark members as deprecated,
+  see [Use `frequenz.core` for enum members and moved symbols](deprecations.md#use-frequenzcore-for-enum-members-and-moved-symbols).
 * **Plain data attributes:** Plain data attributes and public fields typically
   lack runtime interception points. Mark them as deprecated in documentation
   and static type annotations, and defer structural removal or renaming to a
