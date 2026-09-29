@@ -36,11 +36,26 @@ filterwarnings = [
     "error",
     "once::DeprecationWarning",
     "once::PendingDeprecationWarning",
+    'error:.*fqn\.mypkg\.[\w\.]+ (is|was) deprecated:DeprecationWarning',
 ]
 ```
 
 This is the same policy written as test configuration: every other warning is
-an error, deprecations are reported once and do not fail the suite.
+an error, deprecations coming from dependencies are reported once and do not
+fail the suite.
+
+The last entry is the exception: using a symbol the project deprecated itself
+is an error, so the project never releases code that still uses it, which
+users would get as warnings they can do nothing about. It doesn't break
+downstream projects, since it only matches the project's own package (here
+`fqn.mypkg`), and it goes after the `once::` entries because later filters take
+precedence. A filter can only tell the project's own deprecations apart by
+their message, so this is a heuristic that relies on every message starting
+with the fully qualified name of the deprecated symbol (see [the message
+rules](#use-warningsdeprecated--typing_extensionsdeprecated-where-it-reaches)).
+The [repository configuration
+template](https://github.com/frequenz-floss/frequenz-repo-config-python)
+generates this entry and its migration script adds it to existing projects.
 
 ## Removing a deprecated symbol
 
@@ -90,9 +105,12 @@ Five things that are easy to get wrong:
   triple-quoted multi-line message keeps its indentation, which stops
   cross-references from resolving and prints an indented warning in the
   terminal.
-* Always use the pattern `fqn.mypkg.OldThing is deprecated`, this allows to add
-  warning filters that make using deprecations originated for an own library an
-  error to make sure the library doesn't ship using deprecated symbols.
+* Always start with the pattern `fqn.mypkg.OldThing is deprecated`, with the
+  fully qualified name as plain text, neither in backticks nor as a
+  cross-reference. The `pytest` filter in [A deprecation is never a breaking
+  change](#a-deprecation-is-never-a-breaking-change) relies on it to make the
+  project's own uses of the symbol an error, and misses any message that
+  doesn't follow it.
 * Cross-references work in the message. Use the bare `[some.qualified.Name][]`
   form rather than wrapping the name in backticks: the backticks buy code font
   in the documentation at the cost of more noise in the console.
@@ -302,13 +320,20 @@ Every deprecation MUST come with:
 * A migration bullet in the release notes saying what to use instead and what
   differs.
 
-The test matters more than it looks. Because `once::DeprecationWarning` is
-configured rather than `error`, a deprecation that silently stops firing does
-not fail the suite. Only an explicit assertion catches it.
+The test matters more than it looks. A deprecation that silently stops firing
+fails nothing, whatever the warning filters say, since there is no warning left
+to turn into an error. Only an explicit assertion catches it.
 
-The same configuration hides the opposite mistake: a replacement that still
-goes through the deprecated symbol internally. To test that the replacement
-doesn't warn, wrap it in
+`pytest.deprecated_call()` also records the warning instead of letting the
+filter for the project's own deprecations turn it into an error, so any test
+that uses one of the project's deprecated symbols on purpose needs it. Where
+checking the warning doesn't make sense, mark the test with
+`@pytest.mark.filterwarnings("once::DeprecationWarning")` instead.
+
+That filter also catches the opposite mistake, a replacement that still goes
+through the deprecated symbol internally, but only for messages it matches, and
+a deprecation coming from a dependency is still only reported once. To test
+that the replacement doesn't warn at all, wrap it in
 [`frequenz.core.warnings.asserting_no_deprecations()`](https://frequenz-floss.github.io/frequenz-core-python/v1/reference/frequenz/core/warnings/#frequenz.core.warnings.asserting_no_deprecations),
 or
 [`asserting_no_warnings()`](https://frequenz-floss.github.io/frequenz-core-python/v1/reference/frequenz/core/warnings/#frequenz.core.warnings.asserting_no_warnings)
