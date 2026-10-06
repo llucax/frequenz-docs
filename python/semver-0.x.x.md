@@ -166,7 +166,7 @@ We can create a new function `foo2` with the new name and deprecate the old
 one:
 
 ```python
-@deprecated("foo is deprecated, please use `foo2` instead")
+@deprecated("mypkg.foo is deprecated since v0.1.1. Use [mypkg.foo2][] instead.")
 def foo(wrong_arg: int) -> None: ...
 
 def foo2(right_arg: str) -> None: ...
