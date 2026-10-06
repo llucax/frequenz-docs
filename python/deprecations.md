@@ -51,8 +51,8 @@ downstream projects, since it only matches the project's own package (here
 `fqn.mypkg`), and it goes after the `once::` entries because later filters take
 precedence. A filter can only tell the project's own deprecations apart by
 their message, so this is a heuristic that relies on every message starting
-with the fully qualified name of the deprecated symbol (see [the message
-rules](#use-warningsdeprecated--typing_extensionsdeprecated-where-it-reaches)).
+with the fully qualified name of the deprecated symbol (see [the rules for
+warnings](#the-warning-and-the-notice)).
 The [repository configuration
 template](https://github.com/frequenz-floss/frequenz-repo-config-python)
 generates this entry and its migration script adds it to existing projects.
@@ -76,56 +76,100 @@ In any case, when removing a deprecated symbol, **always** follow [semver
 our own [semver-0.x.x.md](semver-0.x.x.md) (remove only in minor
 releases) rules.
 
+## The warning and the notice
+
+Every deprecation reaches users through two texts, written for different
+readers, so they follow different rules:
+
+* The **warning**, emitted at runtime and, for decorated symbols, also reported
+  by `mypy`. It is read in a terminal or a log, far from the deprecated symbol:
+  it points at the line that used it, not at the symbol itself.
+* The **notice**, the `Deprecated:` admonition in the API documentation. It is
+  read right where the deprecated symbol is documented.
+
+The warning MUST:
+
+* Start with the pattern `fqn.mypkg.OldThing is deprecated`, with the fully
+  qualified name as plain text. The `pytest` filter in [A deprecation is never
+  a breaking change](#a-deprecation-is-never-a-breaking-change) relies on it to
+  make the project's own uses of the symbol an error, and misses any message
+  that doesn't follow it.
+* Say what to use instead, by its fully qualified name too, as in
+  `fqn.mypkg.OldThing is deprecated. Use fqn.mypkg.NewThing instead.`
+* Be plain text, without backticks or cross-references, which are only noise in
+  a terminal.
+* Be a sentence or two, written as implicit concatenation of single-line
+  strings. A triple-quoted multi-line message keeps its indentation and prints
+  an indented warning.
+
+It SHOULD NOT say since which version the symbol is deprecated. What matters
+to whoever runs the code is that it is deprecated now; the version belongs in
+the notice, and leaving it out keeps the warning short.
+
+The notice MUST:
+
+* Say since which version the symbol is deprecated and what to use instead,
+  linking the replacement in code font, as in ``Deprecated since v1.2.0. Use
+  [`NewThing`][fqn.mypkg.NewThing] instead.``
+* Not repeat the name of the deprecated symbol, which is right above it.
+
+For the link text, use the fully qualified name when the replacement lives in
+another module, so readers see where it went, as in
+``[`fqn.newpkg.NewThing`][]``, and just its name when the context makes it
+obvious, such as another member of the same enum, as in
+``[`OPEN`][fqn.mypkg.TaskStatus.OPEN]``.
+
+Anything longer than "use X instead", such as renamed fields or changed
+behavior, belongs in the docstring body as ordinary prose, not in the notice.
+
+When many symbols share the same long explanation, such as every member of a
+deprecated enum, explain it once, in the notice of the symbol they belong to,
+and have the others link it: ``Deprecated since v1.2.0. See
+[`OldEnum`][fqn.mypkg.OldEnum] for what to use instead.`` A link is easy to
+follow in the documentation, but not in a terminal, so each warning still
+explains the replacement in full.
+
+The tools below generate both texts wherever they have what they need, which
+[What the documentation tooling does](#what-the-documentation-tooling-does)
+sums up; everywhere else the notice is [written by
+hand](#writing-the-notice-by-hand).
+
 ## Use `warnings.deprecated` / `typing_extensions.deprecated` where it reaches
 
 On a class or a function, the
 [`warnings.deprecated`](https://docs.python.org/3/library/warnings.html#warnings.deprecated)
 decorator (or
 [`typing_extensions.deprecated`](https://typing-extensions.readthedocs.io/en/stable/#typing_extensions.deprecated)
-for Python <3.12) gives three things from one message:
+for Python <3.12) gives three things:
 
 * `mypy` reports every use of the symbol.
-* The `griffe-warnings-deprecated` extension turns the message into the
-  rendered `Deprecated:` admonition in the API documentation (see [Rendering
-  deprecations in the API documentation](#rendering-deprecations-in-the-api-documentation)).
 * The symbol warns at runtime.
+* The symbol is marked as deprecated in the API documentation.
+
+The decorator only takes the warning, so the notice is written by hand in the
+docstring:
 
 ```python
-@deprecated(
-    "fqn.mypkg.OldThing is deprecated since v1.2.0. "
-    "Use [fqn.mypkg.NewThing][] instead."
-)
-class OldThing: ...
+@deprecated("fqn.mypkg.OldThing is deprecated. Use fqn.mypkg.NewThing instead.")
+class OldThing:
+    """A thing, now called `NewThing`.
+
+    Deprecated:
+        Deprecated since v1.2.0. Use [`NewThing`][fqn.mypkg.NewThing] instead.
+    """
 ```
 
-Five things that are easy to get wrong:
-
-* The message is also the runtime warning text, so keep it to a sentence or
-  two, and write it as implicit concatenation of single-line strings. A
-  triple-quoted multi-line message keeps its indentation, which stops
-  cross-references from resolving and prints an indented warning in the
-  terminal.
-* Always start with the pattern `fqn.mypkg.OldThing is deprecated`, with the
-  fully qualified name as plain text, neither in backticks nor as a
-  cross-reference. The `pytest` filter in [A deprecation is never a breaking
-  change](#a-deprecation-is-never-a-breaking-change) relies on it to make the
-  project's own uses of the symbol an error, and misses any message that
-  doesn't follow it.
-* Cross-references work in the message. Use the bare `[some.qualified.Name][]`
-  form rather than wrapping the name in backticks: the backticks buy code font
-  in the documentation at the cost of more noise in the console.
-* Say which version deprecated the symbol, in the sentence itself, as in `"X is
-  deprecated since v1.2.0. Use [Y][] instead."`. A separate "since" line cannot
-  be expressed through the decorator, so the two would drift apart.
-* On a class, the decorator warns on instantiation only, because it wraps
-  `__new__`. A type that users receive rather than construct therefore emits no
-  runtime warning at all, which is worth knowing when judging whether the
-  runtime signal is doing any work for that symbol.
+On a class, the decorator warns on instantiation only, because it wraps
+`__new__`. A type that users receive rather than construct therefore emits no
+runtime warning at all, which is worth knowing when judging whether the runtime
+signal is doing any work for that symbol.
 
 ## Use `frequenz.core` for enum members and moved symbols
 
 The decorator cannot be applied to an enum member or to a module-level alias.
-`frequenz-core` has a helper for each, and both warn at runtime:
+`frequenz-core` has a helper for each, both warn at runtime, and both take the
+deprecation as structured arguments, so the warning and the notice are both
+generated from them:
 
 * [`frequenz.core.enum.deprecated_member()`](https://frequenz-floss.github.io/frequenz-core-python/v1/reference/frequenz/core/enum/#frequenz.core.enum.deprecated_member)
   keeps an enum member usable, on an enum built from
@@ -141,59 +185,94 @@ from frequenz.core.enum import Enum, deprecated_member
 
 class TaskStatus(Enum):
     OPEN = 1
-    PENDING = deprecated_member(
-        1,
-        "fqn.mypkg.TaskStatus.PENDING is deprecated since v1.2.0. "
-        "Use [fqn.mypkg.TaskStatus.OPEN][] instead.",
-    )
+    PENDING = deprecated_member(1, new_name="OPEN", since="v1.2.0")
 ```
 
-Their messages follow the same rules as the decorator's, and are written as
-string literals right in the call. The `griffe_frequenz_core.deprecations`
-extension (see [Rendering deprecations in the API
-documentation](#rendering-deprecations-in-the-api-documentation)) reads them
-without running the code and renders them as the same `Deprecated:`
-admonition, so don't write one by hand for these either, unless you need to say
-more than the message does: the extension leaves an existing `Deprecated:`
-admonition alone instead of adding a second one. A message it can't read, such
-as one held in a constant or built by a helper, gets a generic admonition and a
-warning instead.
+`new_name` is the member to use instead, in the same enum, and `since` the
+version it is deprecated in. Reaching `TaskStatus.PENDING` warns
+`fqn.mypkg.TaskStatus.PENDING is deprecated. Use fqn.mypkg.TaskStatus.OPEN
+instead.`, and its notice says ``Deprecated since v1.2.0. Use
+[`OPEN`][fqn.mypkg.TaskStatus.OPEN] instead.``
 
-## Write the admonition by hand where nothing else reaches
+When there is no member to point at, or the standard wording is not enough,
+pass a `message`, written by the rules for warnings above. It replaces the
+warning only, so write the notice by hand too:
 
-Neither the decorator nor the `frequenz-core` helpers reach an individual
-function argument, a whole module, a constant, or an attribute. For those,
-write a `Deprecated:` admonition in the docstring:
+```python
+class TaskStatus(Enum):
+    UNSPECIFIED = deprecated_member(
+        0,
+        "fqn.mypkg.TaskStatus.UNSPECIFIED is deprecated. "
+        "Use the integer 0 instead if you need that low-level value.",
+        since="v1.2.0",
+    )
+    """The status is unspecified.
+
+    Deprecated:
+        Deprecated since v1.2.0. Use the integer `0` instead if you need that
+        low-level value.
+    """
+```
+
+The documentation is built without running the code, so write these arguments
+as string literals right in the call. What can't be read that way is documented
+as well as possible, with a warning, see [What the documentation tooling
+does](#what-the-documentation-tooling-does).
+
+## Writing the notice by hand
+
+Write a `Deprecated:` admonition in the docstring:
+
+* For what nothing marks: an individual function argument, a whole module, a
+  constant, or an attribute.
+* For a symbol deprecated with the decorator, which only carries the warning.
+* To say more than a generated notice does, for example for an alias or enum
+  member with its own `message`. A hand-written notice always replaces the
+  generated one, and it is the only way to change what the documentation says:
+  `message` only changes the warning.
 
 ```python
 def connect(*, payload: bytes, raw: bytes | None = None) -> None:
     """Connect to the service.
 
     Deprecated:
-        The `raw` argument is deprecated since v1.2.0. Pass `payload` instead.
+        The `raw` argument is deprecated since v1.2.0. Use `payload` instead.
     """
 ```
 
+* Follow the rules for notices in [The warning and the
+  notice](#the-warning-and-the-notice). A notice about part of a symbol, such
+  as one argument, has to say which part.
 * Write `Deprecated:`, not `Warning: Deprecated`. Only the former renders with
-  the deprecation style, and it is what the extensions generate.
+  the deprecation style, and it is what the tooling generates.
 * Use no custom title. A title replaces the word "Deprecated" in the rendered
   output, so `Deprecated: v1.2.0` renders as just "v1.2.0". The version goes in
   the text.
-* Put the admonition immediately after the summary line. The extensions put
-  the generated ones at the very top, above the summary, but a docstring has to
-  start with its summary, so right after it is as close as a hand-written one
-  gets.
-* Never hand-write an admonition for a symbol the decorator already marks. The
-  `griffe-warnings-deprecated` extension adds its own regardless, so the page
-  shows two.
-* The admonition is only read in the documentation, right where the deprecated
-  symbol is, so the message rules above, written for text that is also printed
-  in a console, don't apply: there is no need to repeat the symbol's name, and
-  code font and cross-references can be used freely.
+* Put it immediately after the summary line, since a docstring has to start
+  with its summary. On a symbol the tooling marks as deprecated, a decorated
+  class or function, an enum member or an alias, the notice is moved to the
+  top, where generated ones go, above the summary. Anywhere else, such as on a
+  module or for an argument, it stays where it is written.
+* Write one notice per symbol. Anything longer than "use X instead" goes in the
+  docstring body as ordinary prose.
 
-Anything longer than "use X instead", such as renamed fields or changed
-behavior, belongs in the docstring body as ordinary prose, not in a second
-admonition.
+## What the documentation tooling does
+
+| Deprecated with                        | Warning                       | Notice generated from      | Write the notice by hand                |
+| -------------------------------------- | ----------------------------- | -------------------------- | --------------------------------------- |
+| `@deprecated(...)`                     | the decorator's message       | nothing                    | always                                  |
+| `deprecated_member(..., new_name=...)` | generated, or `message`       | `since` and `new_name`     | to say more, or with a custom `message` |
+| `deprecated_member(..., message)`      | `message`                     | nothing                    | always                                  |
+| `DeprecatedAlias(...)`                 | generated, or `message`       | `since` and the new path   | to say more, or with a custom `message` |
+| nothing (module, constant, argument)   | whatever the code emits       | nothing                    | always                                  |
+
+A deprecated symbol the tooling marks always gets a notice, even when it can't
+be written as this guide asks: if there is no hand-written notice and nothing to
+generate one from, the documentation shows the warning, or as much as could be
+read, such as ``Deprecated. Use [`NewThing`][fqn.mypkg.NewThing] instead.``
+when `since` is missing. Each such case logs a warning, which fails the strict
+build, so it doesn't go unnoticed; the fix is to give the missing arguments as
+string literals, or to write the notice by hand.
 
 ## What type checkers cannot do
 
@@ -247,16 +326,19 @@ else:
 Each alias is a `DeprecatedAlias` naming the old symbol and where it is now:
 `new_module`, the module it lives in now, and `new_name`, its new name when it
 was renamed too. Without `new_module`, the alias points at a symbol renamed in
-its own module. Give `since`, the version the alias is deprecated in, and it
-warns with this guide's standard wording, `{old} is deprecated since {since}.
-Use {new} instead.`; since every alias gives its own, each can say a different
-version. The documentation of the alias says "Deprecated since {since}. Use
-`{new}` instead.", linking the target: unlike the warning, it is read right
-where the alias is, so it doesn't repeat its name. Give `message` instead for a
-custom template taking only `{old}` and `{new}`, the fully qualified old and new
-names, when the standard wording is not enough. It is a runtime message like a
-decorator's, so it follows the same rules, with `[{new}][]` to link the target,
-and it is also what the documentation of the alias shows.
+its own module. `since` is the version the alias is deprecated in; since every
+alias gives its own, each can say a different version.
+
+From those, the alias warns with the standard wording, `{old} is deprecated.
+Use {new} instead.`, with fully qualified names, and its notice says
+``Deprecated since {since}. Use [`{new}`][] instead.``, showing just the new
+name for a rename within the same module.
+
+When the standard warning is not enough, give `message` too, a template taking
+only `{old}` and `{new}`, the fully qualified old and new names, and written by
+the rules for warnings. It replaces the warning only: to say more in the
+documentation, write the notice by hand in the docstring of the alias declared
+for type checkers, which replaces the generated one.
 
 Two things MUST be observed when doing this:
 
@@ -353,14 +435,12 @@ block. It resets the deduplication history too, so keep it to tests.
 
 ## Rendering deprecations in the API documentation
 
-The `Deprecated:` admonitions are rendered by two griffe extensions, enabled in
-the mkdocstrings Python handler in `mkdocs.yml`:
-
-* [`griffe-warnings-deprecated`](https://mkdocstrings.github.io/griffe-warnings-deprecated/)
-  for the `deprecated` decorator.
-* [`griffe-frequenz-core`](https://github.com/frequenz-floss/griffe-frequenz-core)
-  (`griffe_frequenz_core.deprecations`, v1.0.1 or later) for
-  `deprecated_aliases()` and `deprecated_member()`.
+The notices are rendered by the
+[`griffe-frequenz-core`](https://github.com/frequenz-floss/griffe-frequenz-core)
+extension (`griffe_frequenz_core.deprecations`), enabled in the mkdocstrings
+Python handler in `mkdocs.yml`. It handles the `deprecated` decorator,
+`deprecated_member()` and `deprecated_aliases()` alike, as [What the
+documentation tooling does](#what-the-documentation-tooling-does) describes:
 
 ```yaml
 plugins:
@@ -369,23 +449,21 @@ plugins:
         python:
           options:
             extensions:
-              - griffe_warnings_deprecated:
-                  kind: deprecated
-                  title: Deprecated
               - griffe_frequenz_core.deprecations:
                   kind: deprecated
                   title: Deprecated
 ```
 
-Both packages go in the `dev-mkdocs` dependencies. The `deprecated` kind is
-styled in `docs/_css/mkdocstrings.css`, which, like the first extension, comes
-with the [repository configuration
+The package goes in the `dev-mkdocs` dependencies. The `deprecated` kind is
+styled in `docs/_css/mkdocstrings.css`, and both come with the [repository
+configuration
 template](https://github.com/frequenz-floss/frequenz-repo-config-python); a
 hand-written `Deprecated:` admonition uses the same kind, so all of them look
 alike.
 
 Frequenz projects build their documentation in strict mode, so warnings fail
 the build. `griffe-frequenz-core` warns whenever it can't document a
-deprecation in full, and a link to a replacement that can't be resolved warns
-too. For a symbol that moved to another project, add that project's
-`objects.inv` to the `inventories` of the Python handler, so the link resolves.
+deprecation as this guide asks, and a link to a replacement that can't be
+resolved warns too. For a symbol that moved to another project, add that
+project's `objects.inv` to the `inventories` of the Python handler, so the link
+resolves.
