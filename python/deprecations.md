@@ -196,7 +196,8 @@ instead.`, and its notice says ``Deprecated since v1.2.0. Use
 
 When there is no member to point at, or the standard wording is not enough,
 pass a `message`, written by the rules for warnings above. It replaces the
-warning only, so write the notice by hand too:
+warning only, so write the notice by hand too, saying the version there:
+without `new_name` there is no generated notice, so `since` would not be used.
 
 ```python
 class TaskStatus(Enum):
@@ -204,7 +205,6 @@ class TaskStatus(Enum):
         0,
         "fqn.mypkg.TaskStatus.UNSPECIFIED is deprecated. "
         "Use the integer 0 instead if you need that low-level value.",
-        since="v1.2.0",
     )
     """The status is unspecified.
 
