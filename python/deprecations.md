@@ -50,9 +50,11 @@ users would get as warnings they can do nothing about. It doesn't break
 downstream projects, since it only matches the project's own package (here
 `fqn.mypkg`), and it goes after the `once::` entries because later filters take
 precedence. A filter can only tell the project's own deprecations apart by
-their message, so this is a heuristic that relies on every message starting
-with the fully qualified name of the deprecated symbol (see [the rules for
-warnings](#the-warning-and-the-notice)).
+their message, so this is a heuristic that relies on every message containing
+the fully qualified name of the deprecated symbol followed by `is deprecated`
+(see [the rules for warnings](#the-warning-and-the-notice)). The pattern of
+that entry starts with `.*`, so a message can start with other words, like the
+name of a deprecated argument.
 The [repository configuration
 template](https://github.com/frequenz-floss/frequenz-repo-config-python)
 generates this entry and its migration script adds it to existing projects.
@@ -93,9 +95,13 @@ The warning MUST:
   qualified name as plain text. The `pytest` filter in [A deprecation is never
   a breaking change](#a-deprecation-is-never-a-breaking-change) relies on it to
   make the project's own uses of the symbol an error, and misses any message
-  that doesn't follow it.
+  that doesn't follow it. The exception is a deprecated part of a symbol, such
+  as an argument. Start the message with that part, as in `The argument raw in
+  fqn.mypkg.connect is deprecated.`
 * Say what to use instead, by its fully qualified name too, as in
-  `fqn.mypkg.OldThing is deprecated. Use fqn.mypkg.NewThing instead.`
+  `fqn.mypkg.OldThing is deprecated. Use fqn.mypkg.NewThing instead.` When
+  the replacement is an argument, name it without the function. See
+  [Deprecating a function argument](#deprecating-a-function-argument).
 * Be plain text, without backticks or cross-references, which are only noise in
   a terminal.
 * Be a sentence or two, written as implicit concatenation of single-line
@@ -219,12 +225,71 @@ as string literals right in the call. What can't be read that way is documented
 as well as possible, with a warning, see [What the documentation tooling
 does](#what-the-documentation-tooling-does).
 
+## Deprecating a function argument
+
+The decorator can't be applied to an argument, but it can be applied to an
+`@overload`. Add an overload that takes the deprecated argument, and decorate
+that overload. `mypy` then reports every call that matches it. An overload
+doesn't warn at runtime, so the implementation warns when it gets the argument. The notice is [written
+by hand](#writing-the-notice-by-hand).
+
+```python
+import warnings
+from typing import overload
+
+from typing_extensions import deprecated
+
+
+@overload
+def connect(*, payload: bytes) -> None: ...
+@overload
+@deprecated(
+    "The argument raw in fqn.mypkg.connect is deprecated. Use payload instead."
+)
+def connect(*, raw: bytes) -> None: ...
+def connect(*, payload: bytes | None = None, raw: bytes | None = None) -> None:
+    """Connect to the service.
+
+    Deprecated:
+        The `raw` argument is deprecated since v1.2.0. Use `payload` instead.
+    """
+    if raw is not None:
+        if payload is not None:
+            raise TypeError("connect() got both `raw` and `payload`")
+        warnings.warn(
+            "The argument raw in fqn.mypkg.connect is deprecated. "
+            "Use payload instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        payload = raw
+    ...
+```
+
+* Start the warning with the argument, then the fully qualified name of the
+  function, as in the example. Use the same text in the decorator and in
+  `warnings.warn()`. Name the replacement argument without the function, as in
+  `Use payload instead.`, because the message already has the function name.
+  The version goes in the notice, as for any other deprecation.
+* Use `stacklevel=2` so the warning points at the line that passed the argument.
+  Add one level for each helper function between that line and the
+  `warnings.warn()` call.
+* Passing the deprecated argument and its replacement together is an error,
+  like any invalid call. Raise `TypeError` before warning.
+* If callers can pass the deprecated argument by position, keep it in its
+  position and make its replacement keyword-only. The arguments after the
+  deprecated one can then be passed by position only in calls that also pass
+  the deprecated argument. In the overload with the replacement, make them
+  keyword-only too. This deprecates passing them by position, so say it in the
+  notice and the release notes.
+
 ## Writing the notice by hand
 
 Write a `Deprecated:` admonition in the docstring:
 
-* For what nothing marks: an individual function argument, a whole module, a
-  constant, or an attribute.
+* For what nothing marks: an individual function argument (see [Deprecating a
+  function argument](#deprecating-a-function-argument) for how to report it at
+  runtime and to type checkers), a whole module, a constant, or an attribute.
 * For a symbol deprecated with the decorator, which only carries the warning.
 * To say more than a generated notice does, for example for an alias or enum
   member with its own `message`. A hand-written notice always replaces the
