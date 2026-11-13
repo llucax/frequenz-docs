@@ -54,7 +54,7 @@ their message, so this is a heuristic that relies on every message containing
 the fully qualified name of the deprecated symbol followed by `is deprecated`
 (see [the rules for warnings](#the-warning-and-the-notice)). The pattern of
 that entry starts with `.*`, so a message can start with other words, like the
-name of a deprecated argument.
+name of a deprecated argument, method or attribute.
 The [repository configuration
 template](https://github.com/frequenz-floss/frequenz-repo-config-python)
 generates this entry and its migration script adds it to existing projects.
@@ -95,13 +95,26 @@ The warning MUST:
   qualified name as plain text. The `pytest` filter in [A deprecation is never
   a breaking change](#a-deprecation-is-never-a-breaking-change) relies on it to
   make the project's own uses of the symbol an error, and misses any message
-  that doesn't follow it. The exception is a deprecated part of a symbol, such
-  as an argument. Start the message with that part, as in `The argument raw in
-  fqn.mypkg.connect is deprecated.`
+  that doesn't follow it. The exception is a deprecated part of a symbol.
+  Start the message with that part, followed by the fully qualified name of
+  the symbol it belongs to:
+    * An argument, as in `The argument raw in fqn.mypkg.connect is
+      deprecated.`
+    * A method, with parentheses, as in `The method close() in
+      fqn.mypkg.Connection is deprecated.`
+    * A property, as in `The property timeout in fqn.mypkg.Connection is
+      deprecated.` An attribute becomes a property to be deprecated (see
+      below), so its message starts with `The property` too.
+
+  These messages still match the filter, since the fully qualified name is
+  followed by `is deprecated`.
 * Say what to use instead, by its fully qualified name too, as in
   `fqn.mypkg.OldThing is deprecated. Use fqn.mypkg.NewThing instead.` When
-  the replacement is an argument, name it without the function. See
-  [Deprecating a function argument](#deprecating-a-function-argument).
+  the replacement is an argument of the same function, or a member of the
+  same class, name it without the function or the class, as in `Use
+  aclose() instead.` See [Deprecating a function
+  argument](#deprecating-a-function-argument) and [Deprecating a method, a
+  property or an attribute](#deprecating-a-method-a-property-or-an-attribute).
 * Be plain text, without backticks or cross-references, which are only noise in
   a terminal.
 * Be a sentence or two, written as implicit concatenation of single-line
@@ -282,6 +295,48 @@ def connect(*, payload: bytes | None = None, raw: bytes | None = None) -> None:
   the deprecated argument. In the overload with the replacement, make them
   keyword-only too. This deprecates passing them by position, so say it in the
   notice and the release notes.
+
+## Deprecating a method, a property or an attribute
+
+The decorator works on a method like on any function: `mypy` reports every
+call, the method warns at runtime, and the notice is [written by
+hand](#writing-the-notice-by-hand):
+
+```python
+class Connection:
+    @deprecated(
+        "The method close() in fqn.mypkg.Connection is deprecated. "
+        "Use aclose() instead."
+    )
+    def close(self) -> None:
+        """Close the connection.
+
+        Deprecated:
+            Deprecated since v1.2.0. Use [`aclose()`][fqn.mypkg.Connection.aclose]
+            instead.
+        """
+```
+
+A property is a method too, so put the decorator under `@property`, and on the
+setter if there is one. An attribute has no code that runs when it is read, so
+turn it into a property first:
+
+```python
+class Connection:
+    @property
+    @deprecated(
+        "The property timeout in fqn.mypkg.Connection is deprecated. "
+        "Use timeout_s instead."
+    )
+    def timeout(self) -> float:
+        """The timeout, in seconds.
+
+        Deprecated:
+            Deprecated since v1.2.0. Use
+            [`timeout_s`][fqn.mypkg.Connection.timeout_s] instead.
+        """
+        return self.timeout_s
+```
 
 ## Writing the notice by hand
 
